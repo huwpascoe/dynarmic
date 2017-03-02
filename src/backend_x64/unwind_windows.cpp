@@ -65,7 +65,11 @@ struct UNWIND_INFO {
     UBYTE FrameRegister : 4;
     UBYTE FrameOffset : 4;
     // UNWIND_CODE UnwindCode[];
-    // With Flags == 0 there are no additional fields.
+    // OPTIONAL UNW_EXCEPTION_INFO ExceptionInfo;
+};
+
+struct UNW_EXCEPTION_INFO {
+    ULONG ExceptionHandler;
 };
 
 namespace Dynarmic {
@@ -157,6 +161,30 @@ static PrologueInformation GetPrologueInformation() {
     return ret;
 }
 
+// https://msdn.microsoft.com/en-us/library/b6sf5kbd.aspx
+static EXCEPTION_DISPOSITION ExceptionHandler(
+    PEXCEPTION_RECORD ExceptionRecord,
+    ULONG64 EstablisherFrame,
+    PCONTEXT ContextRecord,
+    PDISPATCHER_CONTEXT DispatcherContext
+) {
+    (void)ExceptionRecord;
+    (void)EstablisherFrame;
+    (void)DispatcherContext;
+    printf("ExceptionHandler called!\nRip: %llx\n\a\n", ContextRecord->Rip);
+    fflush(stdout);
+    return ExceptionContinueExecution;
+}
+
+static const u8* EmitExceptionHandler(BlockOfCode* code) {
+    code->align(16);
+    const u8* except_handler = code->getCurr();
+    code->mov(code->rax, reinterpret_cast<u64>(&ExceptionHandler));
+    code->jmp(code->rax);
+    printf("except_handler: %llx\n\n", reinterpret_cast<u64>(except_handler));
+    return except_handler;
+}
+
 struct BlockOfCode::UnwindHandler::Impl final {
     Impl(RUNTIME_FUNCTION* rfuncs_, const u8* base_ptr) : rfuncs(rfuncs_) {
         RtlAddFunctionTable(rfuncs, 1, reinterpret_cast<DWORD64>(base_ptr));
@@ -174,12 +202,13 @@ BlockOfCode::UnwindHandler::UnwindHandler() = default;
 BlockOfCode::UnwindHandler::~UnwindHandler() = default;
 
 void BlockOfCode::UnwindHandler::Register(BlockOfCode* code) {
+    const u8* except_handler = EmitExceptionHandler(code);
     const auto prolog_info = GetPrologueInformation();
 
     code->align(16);
     UNWIND_INFO* unwind_info = static_cast<UNWIND_INFO*>(code->AllocateFromCodeSpace(sizeof(UNWIND_INFO)));
     unwind_info->Version = 1;
-    unwind_info->Flags = 0; // No special exception handling required.
+    unwind_info->Flags = UNW_FLAG_EHANDLER;
     unwind_info->SizeOfProlog = prolog_info.prolog_size;
     unwind_info->CountOfCodes = static_cast<UBYTE>(prolog_info.number_of_unwind_code_entries);
     unwind_info->FrameRegister = 0; // No frame register present
@@ -188,6 +217,9 @@ void BlockOfCode::UnwindHandler::Register(BlockOfCode* code) {
     const size_t size_of_unwind_code = sizeof(UNWIND_CODE) * prolog_info.unwind_code.size();
     UNWIND_CODE* unwind_code = static_cast<UNWIND_CODE*>(code->AllocateFromCodeSpace(size_of_unwind_code));
     memcpy(unwind_code, prolog_info.unwind_code.data(), size_of_unwind_code);
+    // UNWIND_INFO::ExceptionInfo field:
+    UNW_EXCEPTION_INFO* except_info = static_cast<UNW_EXCEPTION_INFO*>(code->AllocateFromCodeSpace(sizeof(UNW_EXCEPTION_INFO)));
+    except_info->ExceptionHandler = static_cast<ULONG>(except_handler - code->getCode());
 
     code->align(16);
     RUNTIME_FUNCTION* rfuncs = static_cast<RUNTIME_FUNCTION*>(code->AllocateFromCodeSpace(sizeof(RUNTIME_FUNCTION)));

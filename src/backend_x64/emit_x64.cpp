@@ -1052,6 +1052,8 @@ void EmitX64::EmitSubWithCarry(RegAlloc& reg_alloc, IR::Block& block, IR::Inst* 
     // TODO: Optimize CMP case.
     // Note that x64 CF is inverse of what the ARM carry flag is here.
 
+    code->mov(code->rax, code->qword[nullptr]);
+
     if (args[1].IsImmediate()) {
         u32 op_arg = args[1].GetImmediateU32();
         if (carry_in.IsImmediate()) {
