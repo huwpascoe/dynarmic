@@ -137,6 +137,7 @@ static Dynarmic::UserCallbacks GetUserCallbacks() {
     user_callbacks.memory.Write16 = &MemoryWrite16;
     user_callbacks.memory.Write32 = &MemoryWrite32;
     user_callbacks.memory.Write64 = &MemoryWrite64;
+    user_callbacks.fast_mem_base = (void*)0xF000000000000000;
     return user_callbacks;
 }
 

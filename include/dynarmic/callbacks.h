@@ -58,6 +58,12 @@ struct UserCallbacks {
     static constexpr std::size_t NUM_PAGE_TABLE_ENTRIES = 1 << (32 - PAGE_BITS);
     std::array<std::uint8_t*, NUM_PAGE_TABLE_ENTRIES>* page_table = nullptr;
 
+    // Fast Memory Base Address
+    // Allocate a 4GB block of memory. The JIT will access this memory directly.
+    // If a page-fault happens during a memory access, the JIT will fallback to calling the
+    // MemoryRead*/MemoryWrite* callbacks.
+    void* fast_mem_base = nullptr;
+
     // Coprocessors
     std::array<std::shared_ptr<Coprocessor>, 16> coprocessors;
 };

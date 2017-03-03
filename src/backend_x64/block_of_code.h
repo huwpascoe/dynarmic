@@ -195,7 +195,7 @@ private:
         UnwindHandler();
         ~UnwindHandler();
 
-        void Register(BlockOfCode* code);
+        void Register(BlockOfCode* code, const UserCallbacks& cb);
     private:
         struct Impl;
         std::unique_ptr<Impl> impl;

@@ -13,6 +13,7 @@
 #include "backend_x64/block_of_code.h"
 #include "common/assert.h"
 #include "common/common_types.h"
+#include <boost/optional/optional.hpp>
 
 using UBYTE = u8;
 
@@ -70,6 +71,7 @@ struct UNWIND_INFO {
 
 struct UNW_EXCEPTION_INFO {
     ULONG ExceptionHandler;
+    // OPTIONAL ARBITRARY HandlerData;
 };
 
 namespace Dynarmic {
@@ -161,6 +163,184 @@ static PrologueInformation GetPrologueInformation() {
     return ret;
 }
 
+struct EmulatedMemoryAccess {
+    bool is_write;
+    size_t bit_size;
+    size_t vaddr_x64_register;
+    size_t value_x64_register;
+    const u8* after_instruction;
+};
+
+static boost::optional<EmulatedMemoryAccess> ParseX64MovInstruction(const u8* code) {
+    // We're only interested in a small number of mov/movzx instructions:
+    // * 0x66 is the only legacy prefix and only appears at most once.
+    // * REX prefix may or may not appear.
+    // * Only [sib] addressing is used.
+    // * Both the base and index registers are required.
+    // * Scale must be 1.
+    // If any of the above are violated, this function returns boost::none.
+    //
+    // An additonal unverified assumption is also made:
+    // * Displacement is assumed to be zero.
+
+    bool opsize_prefix = false;
+    if (*code == 0x66) {
+        opsize_prefix = true;
+        code++;
+    }
+
+    bool rex_w = false;
+    bool rex_r = false;
+    bool rex_x = false;
+    bool rex_b = false;
+    if ((*code & 0xF0) == 0x40) {
+        rex_w = (*code & 0b1000) != 0;
+        rex_r = (*code & 0b0100) != 0;
+        rex_x = (*code & 0b0010) != 0;
+        rex_b = (*code & 0b0001) != 0;
+        code++;
+    }
+
+    EmulatedMemoryAccess ret;
+
+    // Supported instructions:
+    // mov r/m8, r8
+    // mov r/m16, r16
+    // mov r/m32, r32
+    // mov r/m64, r64
+    // movzx r32, r/m8
+    // movzx r32, r/m16
+    // mov r32, r/m32
+    // mov r64, r/m64
+    switch (*code) {
+    case 0x88:
+        ret.is_write = true;
+        ret.bit_size = 8;
+        break;
+    case 0x89:
+        ret.is_write = true;
+        ret.bit_size = opsize_prefix ? 16 : (!rex_w ? 32 : 64);
+        break;
+    case 0x8B:
+        if (opsize_prefix) {
+            // mov r16, r/m16 not supported
+            return {};
+        }
+        ret.is_write = false;
+        ret.bit_size = !rex_w ? 32 : 64;
+        break;
+    case 0x0F:
+        code++;
+        switch (*code) {
+        case 0xB6:
+            ret.is_write = false;
+            ret.bit_size = 8;
+            break;
+        case 0xB7:
+            ret.is_write = false;
+            ret.bit_size = 16;
+            break;
+        default:
+            return {}; // Unsupported opcode
+        }
+        break;
+    default:
+        return {}; // Unsupported opcode
+    }
+    code++;
+
+    u8 modrm = *code;
+    u8 modrm_mod = (modrm & 0b11000000) >> 6;
+    u8 modrm_reg = (modrm & 0b00111000) >> 3;
+    u8 modrm_rm = (modrm & 0b00000111);
+    code++;
+    if (modrm_rm != 0b100 && modrm_mod != 0b11) {
+        // Only [sib] addressing supported
+        return {};
+    }
+    ret.value_x64_register = modrm_reg + (rex_r ? 8 : 0);
+
+    u8 sib = *code;
+    u8 sib_scale = (sib & 0b11000000) >> 6;
+    u8 sib_index = (sib & 0b00111000) >> 3;
+    u8 sib_base = (sib & 0b00000111);
+    code++;
+    if (sib_scale != 0b00) {
+        // Only scale == 1 is supported
+        return {};
+    }
+    if (modrm_mod == 0b00 && sib_base == 0b101) {
+        // Base register is required
+        return {};
+    }
+    if (sib_index == 0b100) {
+        // Index register is required
+        return {};
+    }
+    size_t index = sib_index + (rex_x ? 8 : 0);
+    size_t base = sib_base + (rex_b ? 8 : 0);
+    if (base == 14) {
+        ret.vaddr_x64_register = index;
+    } else if (index == 14) {
+        ret.vaddr_x64_register = base;
+    } else {
+        // We only support [r14 + vaddr_reg] or [vaddr_reg + r14]
+        return {};
+    }
+
+    // HACK: We assume displacement == 0 if there is any.
+    switch (modrm_mod) {
+    case 0b01:
+        code += 1;
+        break;
+    case 0b10:
+        code += 4;
+        break;
+    }
+
+    ret.after_instruction = code;
+    return ret;
+}
+
+static u64& GetRegister(PCONTEXT ContextRecord, size_t reg_id) {
+    switch (reg_id) {
+    case 0:
+        return ContextRecord->Rax;
+    case 1:
+        return ContextRecord->Rcx;
+    case 2:
+        return ContextRecord->Rdx;
+    case 3:
+        return ContextRecord->Rbx;
+    case 4:
+        return ContextRecord->Rsp;
+    case 5:
+        return ContextRecord->Rbp;
+    case 6:
+        return ContextRecord->Rsi;
+    case 7:
+        return ContextRecord->Rdi;
+    case 8:
+        return ContextRecord->R8;
+    case 9:
+        return ContextRecord->R9;
+    case 10:
+        return ContextRecord->R10;
+    case 11:
+        return ContextRecord->R11;
+    case 12:
+        return ContextRecord->R12;
+    case 13:
+        return ContextRecord->R13;
+    case 14:
+        return ContextRecord->R14;
+    case 15:
+        return ContextRecord->R15;
+    default:
+        std::terminate();
+    }
+}
+
 // https://msdn.microsoft.com/en-us/library/b6sf5kbd.aspx
 static EXCEPTION_DISPOSITION ExceptionHandler(
     PEXCEPTION_RECORD ExceptionRecord,
@@ -168,12 +348,47 @@ static EXCEPTION_DISPOSITION ExceptionHandler(
     PCONTEXT ContextRecord,
     PDISPATCHER_CONTEXT DispatcherContext
 ) {
-    (void)ExceptionRecord;
-    (void)EstablisherFrame;
-    (void)DispatcherContext;
-    printf("ExceptionHandler called!\nRip: %llx\n\a\n", ContextRecord->Rip);
-    fflush(stdout);
-    return ExceptionContinueExecution;
+    UNUSED(ExceptionRecord, EstablisherFrame);
+
+    const u8* code = reinterpret_cast<u8*>(ContextRecord->Rip);
+    auto mov_inst = ParseX64MovInstruction(code);
+    if (!mov_inst) {
+        printf("Could not parse mov!\n");
+        return ExceptionContinueSearch;
+    }
+
+    // printf("direction = %s\n", mem_access->is_write ? "write" : "read");
+    // printf("bit_size  = %zu\n", mem_access->bit_size);
+    // printf("vaddr_reg = %zu\n", mem_access->vaddr_x64_register);
+    // printf("value_reg = %zu\n", mem_access->value_x64_register);
+
+    const UserCallbacks* cb = reinterpret_cast<UserCallbacks*>(DispatcherContext->HandlerData);
+    if (mov_inst->is_write) {
+        printf("unimplemented");
+    } else {
+        u64& dest = GetRegister(ContextRecord, mov_inst->value_x64_register);
+        u32 vaddr = static_cast<u32>(GetRegister(ContextRecord, mov_inst->vaddr_x64_register));
+        switch (mov_inst->bit_size) {
+        case 8:
+            dest = cb->memory.Read8(vaddr);
+            break;
+        case 16:
+            dest = cb->memory.Read16(vaddr);
+            break;
+        case 32:
+            dest = cb->memory.Read32(vaddr);
+            break;
+        case 64:
+            dest = cb->memory.Read64(vaddr);
+            break;
+        default:
+            return ExceptionContinueSearch;
+        }
+        ContextRecord->Rip = reinterpret_cast<DWORD64>(mov_inst->after_instruction);
+        return ExceptionContinueExecution;
+    }
+
+    return ExceptionContinueSearch;
 }
 
 static const u8* EmitExceptionHandler(BlockOfCode* code) {
@@ -201,7 +416,7 @@ private:
 BlockOfCode::UnwindHandler::UnwindHandler() = default;
 BlockOfCode::UnwindHandler::~UnwindHandler() = default;
 
-void BlockOfCode::UnwindHandler::Register(BlockOfCode* code) {
+void BlockOfCode::UnwindHandler::Register(BlockOfCode* code, const UserCallbacks& cb) {
     const u8* except_handler = EmitExceptionHandler(code);
     const auto prolog_info = GetPrologueInformation();
 
@@ -220,6 +435,9 @@ void BlockOfCode::UnwindHandler::Register(BlockOfCode* code) {
     // UNWIND_INFO::ExceptionInfo field:
     UNW_EXCEPTION_INFO* except_info = static_cast<UNW_EXCEPTION_INFO*>(code->AllocateFromCodeSpace(sizeof(UNW_EXCEPTION_INFO)));
     except_info->ExceptionHandler = static_cast<ULONG>(except_handler - code->getCode());
+    // UNW_EXCEPTION_INFO::HandlerData field:
+    void* cb_copy = code->AllocateFromCodeSpace(sizeof(UserCallbacks));
+    memcpy(cb_copy, &cb, sizeof(UserCallbacks));
 
     code->align(16);
     RUNTIME_FUNCTION* rfuncs = static_cast<RUNTIME_FUNCTION*>(code->AllocateFromCodeSpace(sizeof(RUNTIME_FUNCTION)));
