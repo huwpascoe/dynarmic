@@ -254,7 +254,7 @@ static boost::optional<EmulatedMemoryAccess> ParseX64MovInstruction(const u8* co
     u8 modrm_reg = (modrm & 0b00111000) >> 3;
     u8 modrm_rm = (modrm & 0b00000111);
     code++;
-    if (modrm_rm != 0b100 && modrm_mod != 0b11) {
+    if (modrm_rm != 0b100 || modrm_mod == 0b11) {
         // Only [sib] addressing supported
         return {};
     }
@@ -273,7 +273,7 @@ static boost::optional<EmulatedMemoryAccess> ParseX64MovInstruction(const u8* co
         // Base register is required
         return {};
     }
-    if (sib_index == 0b100) {
+    if (!rex_x && sib_index == 0b100) {
         // Index register is required
         return {};
     }
@@ -364,7 +364,24 @@ static EXCEPTION_DISPOSITION ExceptionHandler(
 
     const UserCallbacks* cb = reinterpret_cast<UserCallbacks*>(DispatcherContext->HandlerData);
     if (mov_inst->is_write) {
-        printf("unimplemented");
+        u64 src = GetRegister(ContextRecord, mov_inst->value_x64_register);
+        u32 vaddr = static_cast<u32>(GetRegister(ContextRecord, mov_inst->vaddr_x64_register));
+        switch (mov_inst->bit_size) {
+        case 8:
+            cb->memory.Write8(vaddr, static_cast<u8>(src));
+            break;
+        case 16:
+            cb->memory.Write16(vaddr, static_cast<u16>(src));
+            break;
+        case 32:
+            cb->memory.Write32(vaddr, static_cast<u32>(src));
+            break;
+        case 64:
+            cb->memory.Write64(vaddr, src);
+            break;
+        default:
+            return ExceptionContinueSearch;
+        }
     } else {
         u64& dest = GetRegister(ContextRecord, mov_inst->value_x64_register);
         u32 vaddr = static_cast<u32>(GetRegister(ContextRecord, mov_inst->vaddr_x64_register));
@@ -384,11 +401,10 @@ static EXCEPTION_DISPOSITION ExceptionHandler(
         default:
             return ExceptionContinueSearch;
         }
-        ContextRecord->Rip = reinterpret_cast<DWORD64>(mov_inst->after_instruction);
-        return ExceptionContinueExecution;
     }
 
-    return ExceptionContinueSearch;
+    ContextRecord->Rip = reinterpret_cast<DWORD64>(mov_inst->after_instruction);
+    return ExceptionContinueExecution;
 }
 
 static const u8* EmitExceptionHandler(BlockOfCode* code) {

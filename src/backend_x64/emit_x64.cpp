@@ -2789,16 +2789,45 @@ static void ReadMemory(BlockOfCode* code, RegAlloc& reg_alloc, IR::Inst* inst, U
 
 template<typename FunctionPointer>
 static void WriteMemory(BlockOfCode* code, RegAlloc& reg_alloc, IR::Inst* inst, UserCallbacks& cb, size_t bit_size, FunctionPointer fn) {
+    using namespace Xbyak::util;
     auto args = reg_alloc.GetArgumentInfo(inst);
-    reg_alloc.HostCall(nullptr, args[0], args[1]);
+
+    if (cb.fast_mem_base) {
+        Xbyak::Reg64 fast_mem_base = reg_alloc.ScratchGpr({ HostLoc::R14 });
+        Xbyak::Reg64 result = reg_alloc.ScratchGpr();
+        Xbyak::Reg64 vaddr = reg_alloc.UseScratchGpr(args[0]);
+        Xbyak::Reg64 value = reg_alloc.UseGpr(args[1]);
+
+        code->mov(vaddr.cvt32(), vaddr.cvt32()); // Zero extend
+        code->mov(fast_mem_base, reinterpret_cast<u64>(cb.fast_mem_base));
+        switch (bit_size) {
+        case 8:
+            code->mov(code->byte[fast_mem_base + vaddr], value.cvt8());
+            break;
+        case 16:
+            code->mov(word[fast_mem_base + vaddr], value.cvt16());
+            break;
+        case 32:
+            code->mov(dword[fast_mem_base + vaddr], value.cvt32());
+            break;
+        case 64:
+            code->mov(qword[fast_mem_base + vaddr], value.cvt64());
+            break;
+        default:
+            ASSERT_MSG(false, "Invalid bit_size");
+            break;
+        }
+
+        return;
+    }
 
     if (!cb.page_table) {
+        reg_alloc.HostCall(nullptr, args[0], args[1]);
         code->CallFunction(fn);
         return;
     }
 
-    using namespace Xbyak::util;
-
+    reg_alloc.HostCall(nullptr, args[0], args[1]);
     Xbyak::Reg32 vaddr = code->ABI_PARAM1.cvt32();
     Xbyak::Reg64 value = code->ABI_PARAM2;
     Xbyak::Reg64 page_index = code->ABI_PARAM3;
