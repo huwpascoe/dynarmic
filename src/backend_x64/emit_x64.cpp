@@ -2794,7 +2794,6 @@ static void WriteMemory(BlockOfCode* code, RegAlloc& reg_alloc, IR::Inst* inst, 
 
     if (cb.fast_mem_base) {
         Xbyak::Reg64 fast_mem_base = reg_alloc.ScratchGpr({ HostLoc::R14 });
-        Xbyak::Reg64 result = reg_alloc.ScratchGpr();
         Xbyak::Reg64 vaddr = reg_alloc.UseScratchGpr(args[0]);
         Xbyak::Reg64 value = reg_alloc.UseGpr(args[1]);
 
