@@ -364,8 +364,8 @@ static EXCEPTION_DISPOSITION ExceptionHandler(
 
     const UserCallbacks* cb = reinterpret_cast<UserCallbacks*>(DispatcherContext->HandlerData);
     if (mov_inst->is_write) {
-        u64 src = GetRegister(ContextRecord, mov_inst->value_x64_register);
-        u32 vaddr = static_cast<u32>(GetRegister(ContextRecord, mov_inst->vaddr_x64_register));
+        u64 src = ContextRecord->Rdx;
+        u32 vaddr = static_cast<u32>(ContextRecord->Rcx);
         switch (mov_inst->bit_size) {
         case 8:
             cb->memory.Write8(vaddr, static_cast<u8>(src));
@@ -383,8 +383,8 @@ static EXCEPTION_DISPOSITION ExceptionHandler(
             return ExceptionContinueSearch;
         }
     } else {
-        u64& dest = GetRegister(ContextRecord, mov_inst->value_x64_register);
-        u32 vaddr = static_cast<u32>(GetRegister(ContextRecord, mov_inst->vaddr_x64_register));
+        u64& dest = ContextRecord->Rax;
+        u32 vaddr = static_cast<u32>(ContextRecord->Rcx);
         switch (mov_inst->bit_size) {
         case 8:
             dest = cb->memory.Read8(vaddr);
