@@ -2231,6 +2231,18 @@ static void ZeroIfNaN64(BlockOfCode* code, Xbyak::Xmm xmm_value, Xbyak::Xmm xmm_
     code->pand(xmm_value, xmm_scratch);
 }
 
+struct FPValueMeta {
+    FPValueMeta() = default;
+    FPValueMeta(const FPValueMeta&) = default;
+    explicit FPValueMeta(const Arm::FPSCR& fpscr)
+            : has_been_flushed_to_zero(fpscr.FTZ())
+            , has_been_default_naned(fpscr.DN())
+    {}
+
+    bool has_been_flushed_to_zero = false;
+    bool has_been_default_naned = false;
+};
+
 static void FPThreeOp32(BlockOfCode* code, RegAlloc& reg_alloc, IR::Block& block, IR::Inst* inst, void (Xbyak::CodeGenerator::*fn)(const Xbyak::Xmm&, const Xbyak::Operand&)) {
     auto args = reg_alloc.GetArgumentInfo(inst);
 
@@ -2239,18 +2251,22 @@ static void FPThreeOp32(BlockOfCode* code, RegAlloc& reg_alloc, IR::Block& block
     Xbyak::Reg32 gpr_scratch = reg_alloc.ScratchGpr().cvt32();
 
     if (block.Location().FPSCR().FTZ()) {
-        DenormalsAreZero32(code, result, gpr_scratch);
-        DenormalsAreZero32(code, operand, gpr_scratch);
+        if (!args[0].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+            DenormalsAreZero32(code, result, gpr_scratch);
+        if (!args[1].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+            DenormalsAreZero32(code, operand, gpr_scratch);
     }
     (code->*fn)(result, operand);
     if (block.Location().FPSCR().FTZ()) {
         FlushToZero32(code, result, gpr_scratch);
     }
     if (block.Location().FPSCR().DN()) {
-        DefaultNaN32(code, result);
+        if (!args[0].GetMeta<FPValueMeta>().has_been_default_naned || !args[1].GetMeta<FPValueMeta>().has_been_default_naned)
+            DefaultNaN32(code, result);
     }
 
     reg_alloc.DefineValue(inst, result);
+    reg_alloc.AddMeta(inst, FPValueMeta{block.Location().FPSCR()});
 }
 
 static void FPThreeOp64(BlockOfCode* code, RegAlloc& reg_alloc, IR::Block& block, IR::Inst* inst, void (Xbyak::CodeGenerator::*fn)(const Xbyak::Xmm&, const Xbyak::Operand&)) {
@@ -2261,15 +2277,18 @@ static void FPThreeOp64(BlockOfCode* code, RegAlloc& reg_alloc, IR::Block& block
     Xbyak::Reg64 gpr_scratch = reg_alloc.ScratchGpr();
 
     if (block.Location().FPSCR().FTZ()) {
-        DenormalsAreZero64(code, result, gpr_scratch);
-        DenormalsAreZero64(code, operand, gpr_scratch);
+        if (!args[0].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+            DenormalsAreZero64(code, result, gpr_scratch);
+        if (!args[1].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+            DenormalsAreZero64(code, operand, gpr_scratch);
     }
     (code->*fn)(result, operand);
     if (block.Location().FPSCR().FTZ()) {
         FlushToZero64(code, result, gpr_scratch);
     }
     if (block.Location().FPSCR().DN()) {
-        DefaultNaN64(code, result);
+        if (!args[0].GetMeta<FPValueMeta>().has_been_default_naned || !args[1].GetMeta<FPValueMeta>().has_been_default_naned)
+            DefaultNaN64(code, result);
     }
 
     reg_alloc.DefineValue(inst, result);
@@ -2282,7 +2301,8 @@ static void FPTwoOp32(BlockOfCode* code, RegAlloc& reg_alloc, IR::Block& block, 
     Xbyak::Reg32 gpr_scratch = reg_alloc.ScratchGpr().cvt32();
 
     if (block.Location().FPSCR().FTZ()) {
-        DenormalsAreZero32(code, result, gpr_scratch);
+        if (!args[0].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+            DenormalsAreZero32(code, result, gpr_scratch);
     }
 
     (code->*fn)(result, result);
@@ -2290,7 +2310,8 @@ static void FPTwoOp32(BlockOfCode* code, RegAlloc& reg_alloc, IR::Block& block, 
         FlushToZero32(code, result, gpr_scratch);
     }
     if (block.Location().FPSCR().DN()) {
-        DefaultNaN32(code, result);
+        if (!args[0].GetMeta<FPValueMeta>().has_been_default_naned)
+            DefaultNaN32(code, result);
     }
 
     reg_alloc.DefineValue(inst, result);
@@ -2303,7 +2324,8 @@ static void FPTwoOp64(BlockOfCode* code, RegAlloc& reg_alloc, IR::Block& block, 
     Xbyak::Reg64 gpr_scratch = reg_alloc.ScratchGpr();
 
     if (block.Location().FPSCR().FTZ()) {
-        DenormalsAreZero64(code, result, gpr_scratch);
+        if (!args[0].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+            DenormalsAreZero64(code, result, gpr_scratch);
     }
 
     (code->*fn)(result, result);
@@ -2311,7 +2333,8 @@ static void FPTwoOp64(BlockOfCode* code, RegAlloc& reg_alloc, IR::Block& block, 
         FlushToZero64(code, result, gpr_scratch);
     }
     if (block.Location().FPSCR().DN()) {
-        DefaultNaN64(code, result);
+        if (!args[0].GetMeta<FPValueMeta>().has_been_default_naned)
+            DefaultNaN64(code, result);
     }
 
     reg_alloc.DefineValue(inst, result);
@@ -2484,14 +2507,16 @@ void EmitX64::EmitFPSingleToDouble(RegAlloc& reg_alloc, IR::Block& block, IR::In
     Xbyak::Reg64 gpr_scratch = reg_alloc.ScratchGpr();
 
     if (block.Location().FPSCR().FTZ()) {
-        DenormalsAreZero32(code, result, gpr_scratch.cvt32());
+        if (!args[0].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+            DenormalsAreZero32(code, result, gpr_scratch.cvt32());
     }
     code->cvtss2sd(result, result);
     if (block.Location().FPSCR().FTZ()) {
         FlushToZero64(code, result, gpr_scratch);
     }
     if (block.Location().FPSCR().DN()) {
-        DefaultNaN64(code, result);
+        if (!args[0].GetMeta<FPValueMeta>().has_been_default_naned)
+            DefaultNaN64(code, result);
     }
 
     reg_alloc.DefineValue(inst, result);
@@ -2503,14 +2528,16 @@ void EmitX64::EmitFPDoubleToSingle(RegAlloc& reg_alloc, IR::Block& block, IR::In
     Xbyak::Reg64 gpr_scratch = reg_alloc.ScratchGpr();
 
     if (block.Location().FPSCR().FTZ()) {
-        DenormalsAreZero64(code, result, gpr_scratch);
+        if (!args[0].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+            DenormalsAreZero64(code, result, gpr_scratch);
     }
     code->cvtsd2ss(result, result);
     if (block.Location().FPSCR().FTZ()) {
         FlushToZero32(code, result, gpr_scratch.cvt32());
     }
     if (block.Location().FPSCR().DN()) {
-        DefaultNaN32(code, result);
+        if (!args[0].GetMeta<FPValueMeta>().has_been_default_naned)
+            DefaultNaN32(code, result);
     }
 
     reg_alloc.DefineValue(inst, result);
@@ -2527,7 +2554,8 @@ void EmitX64::EmitFPSingleToS32(RegAlloc& reg_alloc, IR::Block& block, IR::Inst*
     // Conversion to double is lossless, and allows for clamping.
 
     if (block.Location().FPSCR().FTZ()) {
-        DenormalsAreZero32(code, from, to);
+        if (!args[0].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+            DenormalsAreZero32(code, from, to);
     }
     code->cvtss2sd(from, from);
     // First time is to set flags
@@ -2566,7 +2594,8 @@ void EmitX64::EmitFPSingleToU32(RegAlloc& reg_alloc, IR::Block& block, IR::Inst*
 
     if (block.Location().FPSCR().RMode() != Arm::FPSCR::RoundingMode::TowardsZero && !round_towards_zero) {
         if (block.Location().FPSCR().FTZ()) {
-            DenormalsAreZero32(code, from, to);
+            if (!args[0].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+                DenormalsAreZero32(code, from, to);
         }
         code->cvtss2sd(from, from);
         ZeroIfNaN64(code, from, xmm_scratch);
@@ -2586,7 +2615,8 @@ void EmitX64::EmitFPSingleToU32(RegAlloc& reg_alloc, IR::Block& block, IR::Inst*
         Xbyak::Reg32 gpr_mask = reg_alloc.ScratchGpr().cvt32();
 
         if (block.Location().FPSCR().FTZ()) {
-            DenormalsAreZero32(code, from, to);
+            if (!args[0].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+                DenormalsAreZero32(code, from, to);
         }
         code->cvtss2sd(from, from);
         ZeroIfNaN64(code, from, xmm_scratch);
@@ -2623,7 +2653,8 @@ void EmitX64::EmitFPDoubleToS32(RegAlloc& reg_alloc, IR::Block& block, IR::Inst*
     // ARM saturates on conversion; this differs from x64 which returns a sentinel value.
 
     if (block.Location().FPSCR().FTZ()) {
-        DenormalsAreZero64(code, from, gpr_scratch.cvt64());
+        if (!args[0].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+            DenormalsAreZero64(code, from, gpr_scratch.cvt64());
     }
     // First time is to set flags
     if (round_towards_zero) {
@@ -2659,7 +2690,8 @@ void EmitX64::EmitFPDoubleToU32(RegAlloc& reg_alloc, IR::Block& block, IR::Inst*
 
     if (block.Location().FPSCR().RMode() != Arm::FPSCR::RoundingMode::TowardsZero && !round_towards_zero) {
         if (block.Location().FPSCR().FTZ()) {
-            DenormalsAreZero64(code, from, gpr_scratch.cvt64());
+            if (!args[0].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+                DenormalsAreZero64(code, from, gpr_scratch.cvt64());
         }
         ZeroIfNaN64(code, from, xmm_scratch);
         // Bring into SSE range
@@ -2678,7 +2710,8 @@ void EmitX64::EmitFPDoubleToU32(RegAlloc& reg_alloc, IR::Block& block, IR::Inst*
         Xbyak::Reg32 gpr_mask = reg_alloc.ScratchGpr().cvt32();
 
         if (block.Location().FPSCR().FTZ()) {
-            DenormalsAreZero64(code, from, gpr_scratch.cvt64());
+            if (!args[0].GetMeta<FPValueMeta>().has_been_flushed_to_zero)
+                DenormalsAreZero64(code, from, gpr_scratch.cvt64());
         }
         ZeroIfNaN64(code, from, xmm_scratch);
         // Generate masks if out-of-signed-range
