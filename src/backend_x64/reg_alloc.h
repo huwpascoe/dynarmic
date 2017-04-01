@@ -7,8 +7,11 @@
 #pragma once
 
 #include <array>
+#include <map>
+#include <typeindex>
 #include <vector>
 
+#include <boost/any.hpp>
 #include <boost/optional.hpp>
 #include <xbyak.h>
 
@@ -39,10 +42,25 @@ public:
 
     void EndOfAllocScope();
 
+    template <typename T>
+    void AddMeta(const T& object) {
+        meta[std::type_index(typeid(T))] = object;
+    }
+
+    template <typename T>
+    T GetMeta() {
+        auto iter = meta.find(std::type_index(typeid(T)));
+        if (iter == meta.end())
+            return T{};
+        return *boost::any_cast<T>(&iter->second);
+    }
+
 private:
     std::vector<IR::Inst*> values;
     bool is_being_used = false;
     bool is_scratch = false;
+
+    std::map<std::type_index, boost::any> meta;
 };
 
 struct Argument {
@@ -62,6 +80,9 @@ public:
     bool IsInXmm() const;
     /// Is this value currently in memory?
     bool IsInMemory() const;
+
+    template <typename T>
+    T GetMeta();
 
 private:
     friend class RegAlloc;
@@ -89,6 +110,11 @@ public:
 
     void DefineValue(IR::Inst* inst, const Xbyak::Reg& reg);
     void DefineValue(IR::Inst* inst, Argument& arg);
+
+    template <typename T>
+    void AddMeta(IR::Inst* inst, const T& meta) {
+        LocInfo(*ValueLocation(inst)).AddMeta<T>(meta);
+    }
 
     Xbyak::Reg64 ScratchGpr(HostLocList desired_locations = any_gpr);
     Xbyak::Xmm ScratchXmm(HostLocList desired_locations = any_xmm);
@@ -128,6 +154,13 @@ private:
     HostLocInfo& LocInfo(HostLoc loc);
     const HostLocInfo& LocInfo(HostLoc loc) const;
 };
+
+template <typename T>
+T Argument::GetMeta() {
+    if (value.IsImmediate())
+        return T{};
+    return reg_alloc.LocInfo(*reg_alloc.ValueLocation(value.GetInst())).GetMeta<T>();
+}
 
 } // namespace BackendX64
 } // namespace Dynarmic
