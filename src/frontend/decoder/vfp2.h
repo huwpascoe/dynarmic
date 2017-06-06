@@ -8,9 +8,8 @@
 
 #include <vector>
 
-#include <boost/optional.hpp>
-
 #include "common/common_types.h"
+#include "common/optional_ref.h"
 #include "frontend/decoder/decoder_detail.h"
 #include "frontend/decoder/matcher.h"
 
@@ -21,7 +20,7 @@ template <typename Visitor>
 using VFP2Matcher = Matcher<Visitor, u32>;
 
 template<typename V>
-boost::optional<const VFP2Matcher<V>&> DecodeVFP2(u32 instruction) {
+Common::optional_ref<const VFP2Matcher<V>> DecodeVFP2(u32 instruction) {
     const static std::vector<VFP2Matcher<V>> table = {
 
 #define INST(fn, name, bitstring) detail::detail<VFP2Matcher<V>>::GetMatcher(fn, name, bitstring)
@@ -80,12 +79,12 @@ boost::optional<const VFP2Matcher<V>&> DecodeVFP2(u32 instruction) {
     };
 
     if ((instruction & 0xF0000000) == 0xF0000000)
-        return boost::none; // Don't try matching any unconditional instructions.
+        return std::nullopt; // Don't try matching any unconditional instructions.
 
     const auto matches_instruction = [instruction](const auto& matcher){ return matcher.Matches(instruction); };
 
     auto iter = std::find_if(table.begin(), table.end(), matches_instruction);
-    return iter != table.end() ? boost::make_optional<const VFP2Matcher<V>&>(*iter) : boost::none;
+    return iter != table.end() ? Common::make_optional_ref(*iter) : std::nullopt;
 }
 
 } // namespace Arm

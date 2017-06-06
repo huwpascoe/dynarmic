@@ -52,7 +52,7 @@ void Block::SetCondition(Arm::Cond condition) {
 }
 
 LocationDescriptor Block::ConditionFailedLocation() const {
-    return cond_failed.get();
+    return cond_failed.value();
 }
 
 void Block::SetConditionFailedLocation(LocationDescriptor fail_location) {
@@ -68,7 +68,7 @@ const size_t& Block::ConditionFailedCycleCount() const {
 }
 
 bool Block::HasConditionFailedLocation() const {
-    return cond_failed.is_initialized();
+    return cond_failed.has_value();
 }
 
 Block::InstructionList& Block::Instructions() {
@@ -89,7 +89,7 @@ void Block::SetTerminal(Terminal term) {
 }
 
 bool Block::HasTerminal() const {
-    return terminal.which() != 0;
+    return !std::holds_alternative<Term::Invalid>(terminal);
 }
 
 size_t& Block::CycleCount() {
@@ -101,31 +101,31 @@ const size_t& Block::CycleCount() const {
 }
 
 static std::string TerminalToString(const Terminal& terminal_variant) {
-    switch (terminal_variant.which()) {
+    switch (terminal_variant.index()) {
     case 1: {
-        auto terminal = boost::get<IR::Term::Interpret>(terminal_variant);
+        auto terminal = std::get<IR::Term::Interpret>(terminal_variant);
         return fmt::format("Interpret{{{}}}", terminal.next);
     }
     case 2: {
         return "ReturnToDispatch{}";
     }
     case 3: {
-        auto terminal = boost::get<IR::Term::LinkBlock>(terminal_variant);
+        auto terminal = std::get<IR::Term::LinkBlock>(terminal_variant);
         return fmt::format("LinkBlock{{{}}}", terminal.next);
     }
     case 4: {
-        auto terminal = boost::get<IR::Term::LinkBlockFast>(terminal_variant);
+        auto terminal = std::get<IR::Term::LinkBlockFast>(terminal_variant);
         return fmt::format("LinkBlockFast{{{}}}", terminal.next);
     }
     case 5: {
         return "PopRSBHint{}";
     }
     case 6: {
-        auto terminal = boost::get<IR::Term::If>(terminal_variant);
+        auto terminal = std::get<Common::recursive_wrapper<IR::Term::If>>(terminal_variant).get();
         return fmt::format("If{{{}, {}, {}}}", CondToString(terminal.if_), TerminalToString(terminal.then_), TerminalToString(terminal.else_));
     }
     case 7: {
-        auto terminal = boost::get<IR::Term::CheckHalt>(terminal_variant);
+        auto terminal = std::get<Common::recursive_wrapper<IR::Term::CheckHalt>>(terminal_variant).get();
         return fmt::format("CheckHalt{{{}}}", TerminalToString(terminal.else_));
     }
     default:

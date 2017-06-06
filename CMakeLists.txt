@@ -9,7 +9,6 @@ if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 endif()
 
 # Dynarmic project options
-option(DYNARMIC_USE_SYSTEM_BOOST "Use the system boost libraries" ON)
 option(DYNARMIC_USE_LLVM "Support disassembly of jitted x86_64 code using LLVM" OFF)
 option(DYNARMIC_TESTS "Build tests" ${MASTER_PROJECT})
 option(DYNARMIC_WARNINGS_AS_ERRORS "Warnings as errors" ${MASTER_PROJECT})
@@ -48,7 +47,9 @@ if (MSVC)
         /Zi
         /Zo
         /EHsc
-        /DNOMINMAX)
+        /DNOMINMAX
+        /std:c++latest
+        /permissive-)
 
     if (DYNARMIC_WARNINGS_AS_ERRORS)
         list(APPEND DYNARMIC_CXX_FLAGS
@@ -100,17 +101,6 @@ if (NOT DEFINED ARCHITECTURE)
     add_definitions(-DARCHITECTURE_GENERIC=1)
 endif()
 message(STATUS "Target architecture: ${ARCHITECTURE}")
-
-# Include Boost
-if(DYNARMIC_USE_SYSTEM_BOOST)
-    find_package(Boost 1.57.0 REQUIRED)
-else()
-    if(NOT Boost_INCLUDE_DIRS)
-        message(FATAL_ERROR "Please provide a path to a boost installation using Boost_INCLUDE_DIRS")
-    endif()
-endif()
-add_library(boost INTERFACE IMPORTED)
-set_property(TARGET boost PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${Boost_INCLUDE_DIRS})
 
 # Enable unit-testing.
 enable_testing(true)

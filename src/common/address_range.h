@@ -7,8 +7,7 @@
 #pragma once
 
 #include <cstddef>
-
-#include <boost/variant.hpp>
+#include <variant>
 
 #include "common/common_types.h"
 
@@ -27,7 +26,7 @@ struct AddressInterval {
     }
 };
 
-using AddressRange = boost::variant<FullAddressRange, AddressInterval>;
+using AddressRange = std::variant<FullAddressRange, AddressInterval>;
 
 } // namespace Common
 } // namespace Dynarmic

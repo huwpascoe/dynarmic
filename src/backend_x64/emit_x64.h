@@ -6,10 +6,9 @@
 
 #pragma once
 
+#include <optional>
 #include <unordered_map>
 #include <vector>
-
-#include <boost/optional.hpp>
 
 #include <xbyak_util.h>
 
@@ -51,7 +50,7 @@ public:
     BlockDescriptor Emit(IR::Block& ir);
 
     /// Looks up an emitted host block in the cache.
-    boost::optional<BlockDescriptor> GetBasicBlock(IR::LocationDescriptor descriptor) const;
+    std::optional<BlockDescriptor> GetBasicBlock(IR::LocationDescriptor descriptor) const;
 
     /// Empties the entire cache.
     void ClearCache();
@@ -80,7 +79,9 @@ private:
     void EmitTerminal(IR::Term::LinkBlock terminal, IR::LocationDescriptor initial_location);
     void EmitTerminal(IR::Term::LinkBlockFast terminal, IR::LocationDescriptor initial_location);
     void EmitTerminal(IR::Term::PopRSBHint terminal, IR::LocationDescriptor initial_location);
+    void EmitTerminal(Common::recursive_wrapper<IR::Term::If> terminal, IR::LocationDescriptor initial_location);
     void EmitTerminal(IR::Term::If terminal, IR::LocationDescriptor initial_location);
+    void EmitTerminal(Common::recursive_wrapper<IR::Term::CheckHalt> terminal, IR::LocationDescriptor initial_location);
     void EmitTerminal(IR::Term::CheckHalt terminal, IR::LocationDescriptor initial_location);
 
     // Patching

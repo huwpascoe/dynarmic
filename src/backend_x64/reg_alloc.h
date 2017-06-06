@@ -7,15 +7,16 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <vector>
 
-#include <boost/optional.hpp>
 #include <xbyak.h>
 
 #include "backend_x64/block_of_code.h"
 #include "backend_x64/hostloc.h"
 #include "backend_x64/oparg.h"
 #include "common/common_types.h"
+#include "common/optional_ref.h"
 #include "frontend/ir/microinstruction.h"
 #include "frontend/ir/value.h"
 
@@ -93,7 +94,7 @@ public:
     Xbyak::Reg64 ScratchGpr(HostLocList desired_locations = any_gpr);
     Xbyak::Xmm ScratchXmm(HostLocList desired_locations = any_xmm);
 
-    void HostCall(IR::Inst* result_def = nullptr, boost::optional<Argument&> arg0 = {}, boost::optional<Argument&> arg1 = {}, boost::optional<Argument&> arg2 = {}, boost::optional<Argument&> arg3 = {});
+    void HostCall(IR::Inst* result_def = nullptr, Common::optional_ref<Argument> arg0 = {}, Common::optional_ref<Argument> arg1 = {}, Common::optional_ref<Argument> arg2 = {}, Common::optional_ref<Argument> arg3 = {});
 
     // TODO: Values in host flags
 
@@ -105,7 +106,7 @@ private:
     friend struct Argument;
 
     HostLoc SelectARegister(HostLocList desired_locations) const;
-    boost::optional<HostLoc> ValueLocation(const IR::Inst* value) const;
+    std::optional<HostLoc> ValueLocation(const IR::Inst* value) const;
 
     HostLoc UseImpl(IR::Value use_value, HostLocList desired_locations);
     HostLoc UseScratchImpl(IR::Value use_value, HostLocList desired_locations);

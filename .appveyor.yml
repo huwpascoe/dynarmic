@@ -16,14 +16,11 @@ configuration:
 
 install:
   - git submodule update --init --recursive
-  - cd externals
-  - git clone https://github.com/citra-emu/ext-boost boost
-  - cd ..
 
 before_build:
   - mkdir build
   - cd build
-  - cmake .. -G "%cmake_generator%" -DDYNARMIC_USE_SYSTEM_BOOST=0 -DBoost_INCLUDE_DIRS=%cd%/../externals/boost
+  - cmake .. -G "%cmake_generator%"
   - cd ..
 
 build:

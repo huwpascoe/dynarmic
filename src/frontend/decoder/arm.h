@@ -9,13 +9,11 @@
 #pragma once
 
 #include <algorithm>
-#include <functional>
 #include <vector>
-
-#include <boost/optional.hpp>
 
 #include "common/bit_util.h"
 #include "common/common_types.h"
+#include "common/optional_ref.h"
 #include "frontend/decoder/decoder_detail.h"
 #include "frontend/decoder/matcher.h"
 
@@ -321,13 +319,13 @@ std::vector<ArmMatcher<V>> GetArmDecodeTable() {
 }
 
 template<typename V>
-boost::optional<const ArmMatcher<V>&> DecodeArm(u32 instruction) {
+Common::optional_ref<const ArmMatcher<V>> DecodeArm(u32 instruction) {
     const static auto table = GetArmDecodeTable<V>();
 
     const auto matches_instruction = [instruction](const auto& matcher) { return matcher.Matches(instruction); };
 
     auto iter = std::find_if(table.begin(), table.end(), matches_instruction);
-    return iter != table.end() ? boost::make_optional<const ArmMatcher<V>&>(*iter) : boost::none;
+    return iter != table.end() ? Common::make_optional_ref(*iter) : std::nullopt;
 }
 
 } // namespace Arm

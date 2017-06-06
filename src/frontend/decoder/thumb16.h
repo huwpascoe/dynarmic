@@ -8,9 +8,8 @@
 
 #include <vector>
 
-#include <boost/optional.hpp>
-
 #include "common/common_types.h"
+#include "common/optional_ref.h"
 #include "frontend/decoder/decoder_detail.h"
 #include "frontend/decoder/matcher.h"
 
@@ -21,7 +20,7 @@ template <typename Visitor>
 using Thumb16Matcher = Matcher<Visitor, u16>;
 
 template<typename V>
-boost::optional<const Thumb16Matcher<V>&> DecodeThumb16(u16 instruction) {
+Common::optional_ref<const Thumb16Matcher<V>> DecodeThumb16(u16 instruction) {
     const static std::vector<Thumb16Matcher<V>> table = {
 
 #define INST(fn, name, bitstring) detail::detail<Thumb16Matcher<V>>::GetMatcher(fn, name, bitstring)
@@ -120,7 +119,7 @@ boost::optional<const Thumb16Matcher<V>&> DecodeThumb16(u16 instruction) {
     const auto matches_instruction = [instruction](const auto& matcher){ return matcher.Matches(instruction); };
 
     auto iter = std::find_if(table.begin(), table.end(), matches_instruction);
-    return iter != table.end() ? boost::make_optional<const Thumb16Matcher<V>&>(*iter) : boost::none;
+    return iter != table.end() ? Common::make_optional_ref(*iter) : std::nullopt;
 }
 
 } // namespace Arm

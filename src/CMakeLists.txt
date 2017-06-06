@@ -47,9 +47,10 @@ set(HEADERS
     common/iterator_util.h
     common/memory_pool.h
     common/mp.h
+    common/optional_ref.h
+    common/recursive_wrapper.h
     common/scope_exit.h
     common/string_util.h
-    common/variant_util.h
     frontend/arm/FPSCR.h
     frontend/arm/PSR.h
     frontend/arm/types.h
@@ -109,16 +110,14 @@ create_directory_groups(${SRCS} ${HEADERS})
 
 add_library(dynarmic ${SRCS} ${HEADERS})
 target_include_directories(dynarmic
-                           PUBLIC ../include
+                           PUBLIC ../include common/cpp17
                            PRIVATE .)
 target_compile_options(dynarmic PRIVATE ${DYNARMIC_CXX_FLAGS})
 target_link_libraries(dynarmic
     PRIVATE
-        boost
         fmt
         xbyak
-        $<$<BOOL:DYNARMIC_USE_LLVM>:${llvm_libs}>
-)
+        $<$<BOOL:DYNARMIC_USE_LLVM>:${llvm_libs}>)
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_compile_definitions(dynarmic PRIVATE FMT_USE_WINDOWS_H=0)
 endif()

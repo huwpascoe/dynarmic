@@ -16,7 +16,6 @@
 #include "common/assert.h"
 #include "common/bit_util.h"
 #include "common/common_types.h"
-#include "common/variant_util.h"
 #include "frontend/arm/types.h"
 #include "frontend/ir/basic_block.h"
 #include "frontend/ir/location_descriptor.h"
@@ -120,11 +119,11 @@ EmitX64::BlockDescriptor EmitX64::Emit(IR::Block& block) {
     return block_desc;
 }
 
-boost::optional<EmitX64::BlockDescriptor> EmitX64::GetBasicBlock(IR::LocationDescriptor descriptor) const {
+std::optional<EmitX64::BlockDescriptor> EmitX64::GetBasicBlock(IR::LocationDescriptor descriptor) const {
     auto iter = block_descriptors.find(descriptor.UniqueHash());
     if (iter == block_descriptors.end())
-        return boost::none;
-    return boost::make_optional<BlockDescriptor>(iter->second);
+        return std::nullopt;
+    return std::make_optional<BlockDescriptor>(iter->second);
 }
 
 void EmitX64::EmitVoid(RegAlloc&, IR::Block&, IR::Inst*) {
@@ -1453,7 +1452,7 @@ void EmitX64::EmitSignedSaturation(RegAlloc& reg_alloc, IR::Block& block, IR::In
  * @param value The register containing the value to operate on. Result will be stored in the same register.
  * @param a_tmp A register which can be used as a scratch register.
  */
-static void ExtractMostSignificantBitFromPackedBytes(const Xbyak::util::Cpu& cpu_info, BlockOfCode* code, RegAlloc& reg_alloc, Xbyak::Reg32 value, boost::optional<Xbyak::Reg32> a_tmp = boost::none) {
+static void ExtractMostSignificantBitFromPackedBytes(const Xbyak::util::Cpu& cpu_info, BlockOfCode* code, RegAlloc& reg_alloc, Xbyak::Reg32 value, std::optional<Xbyak::Reg32> a_tmp = std::nullopt) {
     if (cpu_info.has(Xbyak::util::Cpu::tBMI2)) {
         Xbyak::Reg32 tmp = a_tmp ? *a_tmp : reg_alloc.ScratchGpr().cvt32();
         code->mov(tmp, 0x80808080);
@@ -2959,7 +2958,7 @@ static void EmitCoprocessorException() {
     ASSERT_MSG(false, "Should raise coproc exception here");
 }
 
-static void CallCoprocCallback(BlockOfCode* code, RegAlloc& reg_alloc, Jit* jit_interface, Coprocessor::Callback callback, IR::Inst* inst = nullptr, boost::optional<Argument&> arg0 = {}, boost::optional<Argument&> arg1 = {}) {
+static void CallCoprocCallback(BlockOfCode* code, RegAlloc& reg_alloc, Jit* jit_interface, Coprocessor::Callback callback, IR::Inst* inst = nullptr, Common::optional_ref<Argument> arg0 = {}, Common::optional_ref<Argument> arg1 = {}) {
     reg_alloc.HostCall(inst, {}, {}, arg0, arg1);
 
     code->mov(code->ABI_PARAM1, reinterpret_cast<u64>(jit_interface));
@@ -3014,15 +3013,15 @@ void EmitX64::EmitCoprocSendOneWord(RegAlloc& reg_alloc, IR::Block&, IR::Inst* i
     }
 
     auto action = coproc->CompileSendOneWord(two, opc1, CRn, CRm, opc2);
-    switch (action.which()) {
+    switch (action.index()) {
     case 0:
         EmitCoprocessorException();
         return;
     case 1:
-        CallCoprocCallback(code, reg_alloc, jit_interface, boost::get<Coprocessor::Callback>(action), nullptr, args[1]);
+        CallCoprocCallback(code, reg_alloc, jit_interface, std::get<Coprocessor::Callback>(action), nullptr, args[1]);
         return;
     case 2: {
-        u32* destination_ptr = boost::get<u32*>(action);
+        u32* destination_ptr = std::get<u32*>(action);
 
         Xbyak::Reg32 reg_word = reg_alloc.UseGpr(args[1]).cvt32();
         Xbyak::Reg64 reg_destination_addr = reg_alloc.ScratchGpr();
@@ -3053,15 +3052,15 @@ void EmitX64::EmitCoprocSendTwoWords(RegAlloc& reg_alloc, IR::Block&, IR::Inst* 
     }
 
     auto action = coproc->CompileSendTwoWords(two, opc, CRm);
-    switch (action.which()) {
+    switch (action.index()) {
     case 0:
         EmitCoprocessorException();
         return;
     case 1:
-        CallCoprocCallback(code, reg_alloc, jit_interface, boost::get<Coprocessor::Callback>(action), nullptr, args[1], args[2]);
+        CallCoprocCallback(code, reg_alloc, jit_interface, std::get<Coprocessor::Callback>(action), nullptr, args[1], args[2]);
         return;
     case 2: {
-        auto destination_ptrs = boost::get<std::array<u32*, 2>>(action);
+        auto destination_ptrs = std::get<std::array<u32*, 2>>(action);
 
         Xbyak::Reg32 reg_word1 = reg_alloc.UseGpr(args[1]).cvt32();
         Xbyak::Reg32 reg_word2 = reg_alloc.UseGpr(args[2]).cvt32();
@@ -3096,15 +3095,15 @@ void EmitX64::EmitCoprocGetOneWord(RegAlloc& reg_alloc, IR::Block&, IR::Inst* in
     }
 
     auto action = coproc->CompileGetOneWord(two, opc1, CRn, CRm, opc2);
-    switch (action.which()) {
+    switch (action.index()) {
     case 0:
         EmitCoprocessorException();
         return;
     case 1:
-        CallCoprocCallback(code, reg_alloc, jit_interface, boost::get<Coprocessor::Callback>(action), inst);
+        CallCoprocCallback(code, reg_alloc, jit_interface, std::get<Coprocessor::Callback>(action), inst);
         return;
     case 2: {
-        u32* source_ptr = boost::get<u32*>(action);
+        u32* source_ptr = std::get<u32*>(action);
 
         Xbyak::Reg32 reg_word = reg_alloc.ScratchGpr().cvt32();
         Xbyak::Reg64 reg_source_addr = reg_alloc.ScratchGpr();
@@ -3136,15 +3135,15 @@ void EmitX64::EmitCoprocGetTwoWords(RegAlloc& reg_alloc, IR::Block&, IR::Inst* i
     }
 
     auto action = coproc->CompileGetTwoWords(two, opc, CRm);
-    switch (action.which()) {
+    switch (action.index()) {
     case 0:
         EmitCoprocessorException();
         return;
     case 1:
-        CallCoprocCallback(code, reg_alloc, jit_interface, boost::get<Coprocessor::Callback>(action), inst);
+        CallCoprocCallback(code, reg_alloc, jit_interface, std::get<Coprocessor::Callback>(action), inst);
         return;
     case 2: {
-        auto source_ptrs = boost::get<std::array<u32*, 2>>(action);
+        auto source_ptrs = std::get<std::array<u32*, 2>>(action);
 
         Xbyak::Reg64 reg_result = reg_alloc.ScratchGpr();
         Xbyak::Reg64 reg_destination_addr = reg_alloc.ScratchGpr();
@@ -3175,7 +3174,7 @@ void EmitX64::EmitCoprocLoadWords(RegAlloc& reg_alloc, IR::Block&, IR::Inst* ins
     bool long_transfer = coproc_info[2] != 0;
     Arm::CoprocReg CRd = static_cast<Arm::CoprocReg>(coproc_info[3]);
     bool has_option = coproc_info[4] != 0;
-    boost::optional<u8> option{has_option, coproc_info[5]};
+    std::optional<u8> option = has_option ? std::make_optional(coproc_info[5]) : std::nullopt;
 
     std::shared_ptr<Coprocessor> coproc = cb.coprocessors[coproc_num];
     if (!coproc) {
@@ -3201,7 +3200,7 @@ void EmitX64::EmitCoprocStoreWords(RegAlloc& reg_alloc, IR::Block&, IR::Inst* in
     bool long_transfer = coproc_info[2] != 0;
     Arm::CoprocReg CRd = static_cast<Arm::CoprocReg>(coproc_info[3]);
     bool has_option = coproc_info[4] != 0;
-    boost::optional<u8> option{has_option, coproc_info[5]};
+    std::optional<u8> option = has_option ? std::make_optional(coproc_info[5]) : std::nullopt;
 
     std::shared_ptr<Coprocessor> coproc = cb.coprocessors[coproc_num];
     if (!coproc) {
@@ -3353,9 +3352,9 @@ void EmitX64::EmitCondPrelude(const IR::Block& block) {
 }
 
 void EmitX64::EmitTerminal(IR::Terminal terminal, IR::LocationDescriptor initial_location) {
-    Common::VisitVariant<void>(terminal, [this, &initial_location](auto x) {
+    std::visit([this, &initial_location](auto x) {
         this->EmitTerminal(x, initial_location);
-    });
+    }, terminal);
 }
 
 void EmitX64::EmitTerminal(IR::Term::Interpret terminal, IR::LocationDescriptor initial_location) {
@@ -3453,11 +3452,19 @@ void EmitX64::EmitTerminal(IR::Term::PopRSBHint, IR::LocationDescriptor) {
     code->jmp(rax);
 }
 
+void EmitX64::EmitTerminal(Common::recursive_wrapper<IR::Term::If> terminal, IR::LocationDescriptor initial_location) {
+    EmitTerminal(terminal.get(), initial_location);
+}
+
 void EmitX64::EmitTerminal(IR::Term::If terminal, IR::LocationDescriptor initial_location) {
     Xbyak::Label pass = EmitCond(code, terminal.if_);
     EmitTerminal(terminal.else_, initial_location);
     code->L(pass);
     EmitTerminal(terminal.then_, initial_location);
+}
+
+void EmitX64::EmitTerminal(Common::recursive_wrapper<IR::Term::CheckHalt> terminal, IR::LocationDescriptor initial_location) {
+    EmitTerminal(terminal.get(), initial_location);
 }
 
 void EmitX64::EmitTerminal(IR::Term::CheckHalt terminal, IR::LocationDescriptor initial_location) {
@@ -3533,13 +3540,13 @@ void EmitX64::ClearCache() {
 void EmitX64::InvalidateCacheRange(const Common::AddressRange& range) {
     // Remove cached block descriptors and patch information overlapping with the given range.
 
-    switch (range.which()) {
+    switch (range.index()) {
     case 0: // FullAddressRange
         ClearCache();
         break;
 
     case 1: // AddressInterval
-        auto interval = boost::get<Common::AddressInterval>(range);
+        auto interval = std::get<Common::AddressInterval>(range);
         for (auto it = std::begin(block_descriptors); it != std::end(block_descriptors);) {
             const IR::LocationDescriptor& descriptor = it->second.start_location;
             u32 start = descriptor.PC();

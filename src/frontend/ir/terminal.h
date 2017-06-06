@@ -6,9 +6,10 @@
 
 #pragma once
 
-#include <boost/variant.hpp>
+#include <variant>
 
 #include "common/common_types.h"
+#include "common/recursive_wrapper.h"
 #include "frontend/ir/location_descriptor.h"
 
 namespace Dynarmic {
@@ -67,15 +68,15 @@ struct PopRSBHint {};
 struct If;
 struct CheckHalt;
 /// A Terminal is the terminal instruction in a MicroBlock.
-using Terminal = boost::variant<
+using Terminal = std::variant<
         Invalid,
         Interpret,
         ReturnToDispatch,
         LinkBlock,
         LinkBlockFast,
         PopRSBHint,
-        boost::recursive_wrapper<If>,
-        boost::recursive_wrapper<CheckHalt>
+        Common::recursive_wrapper<If>,
+        Common::recursive_wrapper<CheckHalt>
 >;
 
 /**
