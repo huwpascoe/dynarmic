@@ -10,6 +10,7 @@
 #include <type_traits>
 
 #include <xbyak.h>
+#include <xbyak_util.h>
 
 #include "backend_x64/constant_pool.h"
 #include "backend_x64/jitstate.h"
@@ -38,6 +39,8 @@ public:
     void SwitchMxcsrOnEntry();
     /// Code emitter: Makes saved host MXCSR the current MXCSR
     void SwitchMxcsrOnExit();
+    /// Code emitter: If the CPU supports AVX, emit a VZEROUPPER instruction.
+    void MaybeVZEROUPPER();
 
     /// Code emitter: Calls the function
     template <typename FunctionPointer>
@@ -47,6 +50,9 @@ public:
 
         const u64 address  = reinterpret_cast<u64>(fn);
         const u64 distance = address - (getCurr<u64>() + 5);
+
+        // Potential SSE-AVX transition.
+        MaybeVZEROUPPER();
 
         if (distance >= 0x0000000080000000ULL && distance < 0xFFFFFFFF80000000ULL) {
             // Far call
@@ -125,6 +131,8 @@ public:
     Xbyak::Reg64 ABI_PARAM3 = rdx;
     Xbyak::Reg64 ABI_PARAM4 = rcx;
 #endif
+
+    const Xbyak::util::Cpu cpu_info;
 
 private:
     UserCallbacks cb;

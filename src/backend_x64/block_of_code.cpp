@@ -72,6 +72,10 @@ void BlockOfCode::GenRunCode() {
     align();
     run_code = getCurr<RunCodeFuncType>();
 
+    // As we currently do not emit AVX instructions, AVX-SSE transition may occur.
+    // We avoid the transition penality by calling vzeroupper.
+    MaybeVZEROUPPER();
+
     // This serves two purposes:
     // 1. It saves all the registers we as a callee need to save.
     // 2. It aligns the stack so that the code the JIT emits can assume
@@ -185,6 +189,12 @@ void BlockOfCode::SwitchMxcsrOnEntry() {
 void BlockOfCode::SwitchMxcsrOnExit() {
     stmxcsr(dword[r15 + offsetof(JitState, guest_MXCSR)]);
     ldmxcsr(dword[r15 + offsetof(JitState, save_host_MXCSR)]);
+}
+
+void BlockOfCode::MaybeVZEROUPPER() {
+    if (cpu_info.has(Xbyak::util::Cpu::tAVX)) {
+        vzeroupper();
+    }
 }
 
 Xbyak::Address BlockOfCode::MConst(u64 constant) {
